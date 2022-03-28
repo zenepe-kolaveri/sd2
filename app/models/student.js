@@ -1,7 +1,7 @@
 // Get the functions in the db.js file to use
 const db = require('./../services/db');
-const {Programme} = require('./programme');
-const {Module} = require('./module');
+const { Programme } = require('./programme');
+const { Module } = require('./module');
 class Student {
     // Student ID 
     id;
@@ -11,15 +11,18 @@ class Student {
     programme;
     // Student modules 
     modules = [];
-    constructor(id){
+    // Note property 
+    note; // set up a variable  
+    constructor(id) {
         this.id = id;
     }
     // Gets the student name from the database 
-    async getStudentName(){
-        if (typeof this.name !== 'string'){
+    async getStudentDetails() {
+        if (typeof this.name !== 'string') {
             var sql = "SELECT * from Students where id = ?"
             const results = await db.query(sql, [this.id]);
             this.name = results[0].name;
+            this.note = results[0].note;
         }
     }
     // Gets the programme of this student 
@@ -33,16 +36,25 @@ class Student {
             this.programme.pName = results[0].name;
         }
     }
-    async getStudentModules(){
+    async getStudentModules() {
         var sql = "SELECT * FROM Programme_Modules pm \
         JOIN Modules m on m.code = pm.module \
         WHERE programme = ?";
         const results = await db.query(sql, [this.programme.id]);
-        for (var row of results){
+        for (var row of results) {
             this.modules.push(new Module(row.code, row.name));
         }
     }
+    async addStudentNote(note) {
+        var sql = "UPDATE Students SET note = ? WHERE Students.id = ?"
+        const result = await db.query(sql, [note, this.id]);
+        // Ensure the note property in the model is up to date
+        this.note = note;
+        return result;
+    }
 }
+
+
 module.exports = {
-    Student
+    Student,
 }
