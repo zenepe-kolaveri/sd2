@@ -1,6 +1,5 @@
 // Get the functions in the db.js 
 const db = require('../services/db');
-const { Programme } = require('./programme');
 class Programme {
     // Programme ID
     id;
@@ -17,6 +16,7 @@ class Programme {
         }
     }
 }
+       
 module.exports = {
     Programme
 }

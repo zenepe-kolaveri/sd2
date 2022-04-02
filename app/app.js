@@ -2,30 +2,56 @@
 const express = require("express");
 // Create express app
 var app = express();
+
+// Set the sessions
+var session = require('express-session');
+app.use(session({
+    secret: 'secretkeysdfjsflyoifasd',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false }
+}));
+
 // Add static files location
 app.use(express.static("static"));
+
 app.use('/bootstrap', express.static('node_modules/bootstrap/dist'));
 app.use(express.urlencoded({ extended: true }));
 app.set('view engine', 'pug');
 app.set('views', './app/views');
+
 // Get the functions in the db.js file to use
 const db = require('./services/db');
+
 // Add the luxon date formatting library
 const { DateTime } = require("luxon");
+
 // Get the models
 const { Student } = require("./models/student");
 const programmes = require("./models/programmes");
+const { User } = require("./models/user");
+
 // Create a route for root - /
-app.get("/", function (req, res) {
-    // Set up an array of data
-    var test_data = ['one', 'two', 'three', 'four'];
-    // Send the array through to the template as a variable called data
-    res.render("index", {
-        'title': 'My index page',
-        'heading': 'My heading', 'data': test_data
+
+app.get("/", function(req, res) {
+    console.log(req.session);
+    if (req.session.uid) {
+   res.send('Welcome back, ' + req.session.uid + '!');
+   } else {
+   res.send('Please login to view this page!');
+   }
+   res.end();
+   });
+
+// Logout
+
+app.get('/logout', function (req, res) {
+    req.session.destroy();
+    res.redirect('/login');
     });
-});
+
 // Create route for the calendar
+
 // Here we have a page which demonstrates how to both input dates and display dates
 app.get("/calendar", async function (req, res) {
     // Get all the dates from the db to display
@@ -47,33 +73,9 @@ app.get("/calendar", async function (req, res) {
     // Render the calendar template, injecting the dates array as a variable.
     res.render('calendar', { dates: dates });
 });
-// Task 1 JSON formatted listing of students 
-app.get("/all-students", function (req, res) {
-    var sql = 'select * from Students';
-    // Use the db.query() function from services/db.js to send our query
-    // We need the result to proceed, but
-    // we are not inside an async function we cannot use await keyword here.
-    // So we use a .then() block to ensure that we wait until the
-    // promise returned by the async function is resolved before we proceed
-    db.query(sql).then(results => {
-        console.log(results);
-        res.json(results);
-    });
-});
-// Task 2 display a formatted list 
-app.get("/all-students-formatted", function (req, res) {
 
-    var sql = 'select * from Students';
-    // Use the db.query() function from services/db.js to send our query
-    // We need the result to proceed, but
-    // we are not inside an async function we cannot use await keyword here.
-    // So we use a .then() block to ensure that we wait until the
-    // promise returned by the async function is resolved before we proceed
-    db.query(sql).then(results => {
-        res.render('all-students', { data: results });
-    });
-});
-// Task 3 single student page
+// Task single student page
+
 app.get("/single-student/:id", async function (req, res) {
     var stId = req.params.id;
     // Create a student class with the ID passed
@@ -86,7 +88,46 @@ app.get("/single-student/:id", async function (req, res) {
     res.render('student', { 'student': student, 'programmes': resultProgs });
 });
 
+// Register
+app.get('/register', function (req, res) {
+    res.render('register');
+});
+
+// Login
+app.get('/login', function (req, res) {
+    res.render('login');
+});
+
+// Check submitted email and password pair
+
+app.post('/authenticate', async function (req, res) {
+    params = req.body;
+    var user = new User(params.email);
+    try {
+        uId = await user.getIdFromEmail();
+        if (uId) {
+            match = await user.authenticate(params.password);
+            if (match) {
+                req.session.uid = uId;
+                req.session.loggedIn = true;
+                console.log(req.session);
+                res.redirect('/single-student/' + uId);
+            }
+            else {
+                // TODO improve the user journey here
+                res.send('invalid password');
+            }
+        }
+        else {
+            res.send('invalid email');
+        }
+    } catch (err) {
+        console.error(`Error while comparing `, err.message);
+    }
+});
+
 // Create a Route app.post 
+
 app.post('/add-note', function (req, res) {
     // Get the submitted values
     params = req.body; // request body 
@@ -103,12 +144,31 @@ app.post('/add-note', function (req, res) {
 });
 
 // Create a post route to handle the form submission of the option list
+
 app.post('/student-select', function (req, res) {
     // Retrieve the parameter and redirect to the single student page
     id = req.body.studentParam;
     res.redirect('/single-student/' + id);
 });
+
+// A post route to recieve new data for a students' programme
+
+app.post('/allocate-programme', function (req, res) {
+    params = req.body;
+    var student = new Student(params.id)
+    // Adding a try/catch block which will be useful later when we add to the
+    database
+    try {
+        student.updateStudentProgramme(params.programme).then(result => {
+            res.redirect('/single-student/' + params.id);
+        })
+    } catch (err) {
+        console.error(`Error while adding programme `, err.message);
+    }
+});
+
 // Capture the date input and save to the db
+
 app.post('/set-date', async function (req, res) {
     params = req.body.date;
     console.log(params);
@@ -125,15 +185,53 @@ app.post('/set-date', async function (req, res) {
     }
     res.send('date added');
 });
-
-// A post route to recieve new data for a students' programme
-app.post('/allocate-programme', function (req, res) {
+app.post('/set-password', async function (req, res) {
     params = req.body;
-    console.log(params.programme);
-    res.send('form submitted');
+    var user = new User(params.email);
+    try {
+        uId = await user.getIdFromEmail();
+        if (uId) {
+            // If a valid, existing user is found, set the password and redirect to the users single-student page
+            await user.setUserPassword(params.password);
+            res.redirect('/single-student/' + uId);
+        }
+        else {
+            // If no existing user is found, add a new one
+            newId = await user.addUser(params.email);
+            res.send('Perhaps a page where a new user sets a programme would be good here');
+        }
+    } catch (err) {
+        console.error(`Error while adding password `, err.message);
+    }
+});
+
+// Check submitted email and password pair
+
+app.post('/authenticate', async function (req, res) {
+    params = req.body;
+    var user = new User(params.email);
+    try {
+        uId = await user.getIdFromEmail();
+        if (uId) {
+            match = await user.authenticate(params.password);
+            if (match) {
+                res.redirect('/single-student/' + uId);
+            }
+            else {
+                // TODO improve the user journey here
+                res.send('invalid password');
+            }
+        }
+        else {
+            res.send('invalid email');
+        }
+    } catch (err) {
+        console.error(`Error while comparing `, err.message);
+    }
 });
 
 // Create a route for testing the db
+
 app.get("/db_test", function (req, res) {
     // Prepare an SQL query that will return all rows from the test_table
     var sql = 'select * from test_table';
@@ -152,7 +250,33 @@ app.get("/db_test", function (req, res) {
         res.json(results)
     });
 });
+// Task  JSON formatted listing of students 
+app.get("/all-students", function (req, res) {
+    var sql = 'select * from Students';
+    // Use the db.query() function from services/db.js to send our query
+    // We need the result to proceed, but
+    // we are not inside an async function we cannot use await keyword here.
+    // So we use a .then() block to ensure that we wait until the
+    // promise returned by the async function is resolved before we proceed
+    db.query(sql).then(results => {
+        console.log(results);
+        res.json(results);
+    });
+});
 
+// Task  display a formatted list 
+app.get("/all-students-formatted", function (req, res) {
+
+    var sql = 'select * from Students';
+    // Use the db.query() function from services/db.js to send our query
+    // We need the result to proceed, but
+    // we are not inside an async function we cannot use await keyword here.
+    // So we use a .then() block to ensure that we wait until the
+    // promise returned by the async function is resolved before we proceed
+    db.query(sql).then(results => {
+        res.render('all-students', { data: results });
+    });
+});
 // Create a route for /goodbye
 // Responds to a 'GET' request
 app.get("/goodbye", function (req, res) {

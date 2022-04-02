@@ -52,9 +52,32 @@ class Student {
         this.note = note;
         return result;
     }
+    async deleteStudentProgramme(programme) {
+        var sql = "DELETE FROM Student_Programme WHERE id = ?";
+        const result = await db.query(sql, [this.id]);
+        // Ensure the note property in the model is up to date
+        this.programme = '';
+        return result;
+    } javascript
+
+    async addStudentProgramme(programme) {
+        var sql = "INSERT INTO Student_Programme (id, programme) VALUES (?, ?)";
+        const result = await db.query(sql, [this.id, programme]);
+        // Ensure the note property in the model is up to date
+        this.programme = programme;
+        return result;
+    }
+    async updateStudentProgramme(programme) {
+        const existing = await this.getStudentProgramme();
+        if (this.programme) {
+            await this.deleteStudentProgramme(programme);
+        }
+        await this.addStudentProgramme(programme);
+    }
+
+
+
 }
-
-
 module.exports = {
     Student,
 }
